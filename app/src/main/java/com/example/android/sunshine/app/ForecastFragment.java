@@ -2,9 +2,11 @@ package com.example.android.sunshine.app;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.text.format.Time;
@@ -35,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Created by ecrook on 8/29/16.
@@ -66,13 +69,24 @@ public class ForecastFragment extends Fragment {
 
         //noinspection SimplifiableIfStatement
         if (id == R.id.action_refresh) {
-            FetchWeatherTask weatherTask = new FetchWeatherTask();
-            weatherTask.execute("67601");
-
+            updateWeather();
             return true;
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    private void updateWeather() {
+        FetchWeatherTask weatherTask = new FetchWeatherTask();
+        String location = PreferenceManager.getDefaultSharedPreferences(getActivity())
+                .getString(getString(R.string.pref_location_key), getString(R.string.pref_location_default));
+        weatherTask.execute(location);
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        updateWeather();
     }
 
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -80,24 +94,12 @@ public class ForecastFragment extends Fragment {
         //create a view and inflate it as the fragment
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
 
-        //create an array of some fake forecast data
-        String[] forecastArray = {
-                "Today - Sunny - 88/63",
-                "Tomorrow - Foggy - 74/53",
-                "Tues - Cloudy - 76/65",
-                "Wed - Tornadoes - 3093",
-                "Thurs - Snow - -23/-45",
-                "Fri - Hades - 120/105",
-                "Sat - Perfect - 70/63"
-        };
-
-        //change the forecast array to a list
-        List<String> weekForecast = new ArrayList<String>(Arrays.asList(forecastArray));
-
-
         //create an ArrayAdapter that will connect the forecast data to the ListView
-        mForecastAdapter = new ArrayAdapter<String>(getActivity(),
-                R.layout.list_item_forecast, weekForecast);
+        mForecastAdapter = new ArrayAdapter<String>(
+                getActivity(), //Current context (this activity)
+                R.layout.list_item_forecast, //name of the layout ID
+                R.id.list_item_forecast_textview, //ID of the textview to populate
+                new ArrayList<String>());
 
         //Get a reference to the ListView and attach the adapter to it
         final ListView ForecastListView = (ListView) rootView.findViewById(R.id.listview_forecast);
@@ -111,8 +113,10 @@ public class ForecastFragment extends Fragment {
                 toast.show();
                 */
 
+                String forecast = mForecastAdapter.getItem(position);
                 //create an intent to open details activity and start it
-                Intent details = new Intent(getContext(), DetailActivity.class);
+                Intent details = new Intent(getActivity(), com.example.android.sunshine.app.DetailActivity.class);
+                details.putExtra(Intent.EXTRA_TEXT, forecast);
                 startActivity(details);
             }
         });
@@ -142,8 +146,19 @@ public class ForecastFragment extends Fragment {
             long roundedHigh = Math.round(high);
             long roundedLow = Math.round(low);
 
-            String highLowStr = roundedHigh + "/" + roundedLow;
-            return highLowStr;
+            //convert to imperial units if user changed preference from default metric
+            //read the preference
+            SharedPreferences unitsPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+            //store the preference key
+            String units = unitsPref.getString(getString(R.string.pref_units_key), getString(R.string.pref_units_default));
+            //convert if its imperial
+            if (units.compareTo("imperial") == 0) {
+                double imperialHigh = roundedHigh * 1.8 + 32;
+                double imperialLow = roundedLow * 1.8 + 32;
+                return Math.round(imperialHigh) + "/" + Math.round(imperialLow);
+            }
+            //else
+            return roundedHigh + "/" + roundedLow;
         }
 
         /**
@@ -209,6 +224,7 @@ public class ForecastFragment extends Fragment {
                 // Temperatures are in a child object called "temp".  Try not to name variables
                 // "temp" when working with temperature.  It confuses everybody.
                 JSONObject temperatureObject = dayForecast.getJSONObject(OWM_TEMPERATURE);
+                //depending on user preference, display in metric or imperial units
                 double high = temperatureObject.getDouble(OWM_MAX);
                 double low = temperatureObject.getDouble(OWM_MIN);
 
